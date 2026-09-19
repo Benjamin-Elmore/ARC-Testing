@@ -1,12 +1,35 @@
+// BASE INCLUDES
 #pragma once
 #include <stdio.h>
 #include <functional>
+#include <unordered_map>
+#include <string_view>
 
-#include "SensorUtils.h"
-
+// RTOS
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+
+// OUTSIDE IMPORTS
+#include "SensorUtils.h"
+
+// MAXIMUM VALUES PER SENSOR
+#ifndef SENSOR_MAX_FILTERS
+#define SENSOR_MAX_FILTERS 4  // Maximum filter callbacks stored per sensor.
+#endif
+#ifndef SENSOR_MAX_METHODS
+#define SENSOR_MAX_METHODS 6  // Maximum named command callbacks per sensor.
+#endif
+#ifndef SENSOR_MAX_ON_SETUP
+#define SENSOR_MAX_ON_SETUP 4  // Maximum named command callbacks per sensor.
+#endif
+#ifndef SENSOR_MAX_ON_LOOP
+#define SENSOR_MAX_ON_LOOP 4  // Maximum named command callbacks per sensor.
+#endif
+#ifndef SENSOR_USER_SLOTS
+#define SENSOR_USER_SLOTS  4  // Number of per-sensor float scratch values.
+#endif
+
 
 class Sensor{
     public:
@@ -19,28 +42,43 @@ class Sensor{
                 SemaphoreHandle_t& mutexReference,                                              // MUTEX for the sensor
                 uint8_t muxChannel = SensorUtils::UNUSED_MUX,                                   // MUX channel
                 std::initializer_list <SensorUtils::FunctionCallback> appendedOnSetup = {},     // STARTUP FUNCTIONS
-                std::initializer_list<SensorUtils::FunctionCallback> appendedOnLoop = {}        // LOOP FUNCTIONS
+                std::initializer_list<SensorUtils::FunctionCallback> appendedOnLoop = {},       // LOOP FUNCTIONS
+                std::initializer_list<SensorUtils::AppendedMethod> appendedMethods = {}
             )
             : _name(name), _mutexReference(mutexReference), _muxChannel(muxChannel)
         {
 
-            // Function members, configured into a linked list
+            // SETUP AND LOOP SETUP
             // the FuncHead fields hold the head of the linked list
             if (appendedOnSetup.size() != 0){
-                setupFuncHead = SensorUtils::linkFunctionCallback(appendedOnSetup);
+                _setupFuncHead = SensorUtils::linkFunctionCallback(appendedOnSetup);
             }
             if (appendedOnLoop.size() != 0){
-                loopFuncHead = SensorUtils::linkFunctionCallback(appendedOnLoop);
+                _loopFuncHead = SensorUtils::linkFunctionCallback(appendedOnLoop);
+            }
+            
+            // APPENDED METHODS SETUP
+            for (const SensorUtils::AppendedMethod& method : appendedMethods) {
+                this->appendMethod(method);
             }
         }
 
         // DESTRUCTOR:
         // Default for the sensor
         ~Sensor() = default;
-
+        
         void setup();
 
         void readRaw();
+
+        void appendMethod(SensorUtils::AppendedMethod function) {
+            // Append a method to the hash table
+            if (this->_appendedMethods.size() >= SENSOR_MAX_METHODS) {
+                this->_status == SensorUtils::SENSOR_ERR_FULL;
+            }
+            
+            this->_appendedMethods.emplace(function.methodName, function.method);
+        }
 
     protected:
         // Meant to be interfaced with in child classes
@@ -55,15 +93,22 @@ class Sensor{
         //OPTIONAL MEMBERS:
         uint8_t _muxChannel;
 
-        // ORDERED LINKED LIST of functions that run after setup and loop
+        // SETUP AND LOOP FUNCTIONS, stored in linked list
         // Pointers to the head of each function list:
-        SensorUtils::FunctionNode* setupFuncHead = nullptr;
-        SensorUtils::FunctionNode* loopFuncHead = nullptr;
+        SensorUtils::FunctionNode* _setupFuncHead = nullptr;
+        SensorUtils::FunctionNode* _loopFuncHead = nullptr;
+
+        //APPENDED METHODS, stored in hash table
+        std::unordered_map<std::string_view, SensorUtils::FunctionCallback> _appendedMethods;
 
         // TASK LOOP utilized within the actual RTOS task
         void taskLoop();
     private:
-        // Wrapper on task loop for RTOS Task
+        //STATUS FIELDS
+        bool _exceededMaximums{false};
+        SensorUtils::sensor_status_t _status {SensorUtils::SENSOR_ERR_NOT_READY};
+
+        // WRAPPER ON TASK LOOP for RTOS Task
         static void _taskEntry(void* ptr) {
             reinterpret_cast<Sensor*>(ptr)->taskLoop();
         }
