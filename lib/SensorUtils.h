@@ -54,7 +54,14 @@ namespace SensorUtils {
         char* methodName;
         FunctionCallback method;
 
-        AppendedMethod(char* name, FunctionCallback method): methodName(name), method(method){};
+        AppendedMethod(char* name, FunctionCallback method) : methodName(name), method(method){};
+    };
+
+    struct AppendedVariable {
+        char* variableName;
+        uint8_t variable;
+
+        AppendedVariable(char* name, uint8_t variable) : variableName(name), variable(variable){};
     };
 
     FunctionNode* linkFunctionCallback (std::initializer_list<FunctionCallback>& functionList) {

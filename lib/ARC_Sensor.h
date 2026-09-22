@@ -28,7 +28,10 @@
 #define SENSOR_MAX_ON_LOOP 4  // Maximum named command callbacks per sensor.
 #endif
 #ifndef SENSOR_USER_SLOTS
-#define SENSOR_USER_SLOTS  4  // Number of per-sensor float scratch values.
+#define SENSOR_USER_SLOTS  4  // Number of per-sensor int scratch values.
+#endif
+#ifndef TASK_STACK_SIZE
+#define TASK_STACK_SIZE 2048
 #endif
 #ifndef DEFAULT_PRIORITY
 #define DEFAULT_PRIORITY 1
@@ -55,7 +58,8 @@ class Sensor{
                 uint8_t priority = DEFAULT_PRIORITY,                                            // SENSOR TASK PRIORITY
                 std::initializer_list <SensorUtils::FunctionCallback> appendedOnSetup = {},     // STARTUP FUNCTIONS
                 std::initializer_list<SensorUtils::FunctionCallback> appendedOnLoop = {},       // LOOP FUNCTIONS
-                std::initializer_list<SensorUtils::AppendedMethod> appendedMethods = {}         // APPENDED METHODS
+                std::initializer_list<SensorUtils::AppendedMethod> appendedMethods = {},        // APPENDED METHODS
+                std::initializer_list<SensorUtils::AppendedVariable> appendedVariables = {}     // APPENDED VARIABLES
             )
             : _name(name), _mutexReference(mutexReference), _muxChannel(muxChannel), _priority(priority)
         {
@@ -63,15 +67,18 @@ class Sensor{
             // SETUP AND LOOP SETUP
             // the FuncHead fields hold the head of the linked list
             if (appendedOnSetup.size() != 0){
-                _setupFuncHead = SensorUtils::linkFunctionCallback(appendedOnSetup);
+                this->_setupFuncHead = SensorUtils::linkFunctionCallback(appendedOnSetup);
             }
             if (appendedOnLoop.size() != 0){
-                _loopFuncHead = SensorUtils::linkFunctionCallback(appendedOnLoop);
+                this->_loopFuncHead = SensorUtils::linkFunctionCallback(appendedOnLoop);
             }
             
             // APPENDED METHODS SETUP
             for (const SensorUtils::AppendedMethod& method : appendedMethods) {
-                this->appendMethod(method);
+                this->appendMethod(method.methodName, method.method);
+            }
+            for (const SensorUtils::AppendedVariable& variable : appendedVariables) {
+                this->appendVariable(variable.variableName, variable.variable);
             }
         }
 
@@ -94,22 +101,40 @@ class Sensor{
             xTaskCreatePinnedToCore(
                 _taskEntry,             //Task Loop
                 this->_name,            //Loop Name
-                4096,                   //Stack size
+                TASK_STACK_SIZE,                   //Stack size
                 this,                   //Ptr to task object
-                1,                      //Priority
+                this->_priority,                      //Priority
                 &(this->_taskObject),   //taskHandle_t in SensorParent
                 this->_core             //Core
             );
         }
 
-        void appendMethod(SensorUtils::AppendedMethod function) {
+        void appendMethod(char* functionName, SensorUtils::FunctionCallback function) {
             // Append a method to the hash table
 
             if (this->_appendedMethods.size() >= SENSOR_MAX_METHODS) {
                 this->_status = SensorUtils::SENSOR_ERR_FULL;
             }
             
-            this->_appendedMethods.emplace(function.methodName, function.method);
+            this->_appendedMethods.emplace(functionName, function);
+        }
+
+        void appendVariable(char* variableName, uint8_t variable) {
+            // Append a variable to the hash table
+
+            if (this->_appendedVariables.size() >= SENSOR_USER_SLOTS) {
+                this->_status = SensorUtils::SENSOR_ERR_FULL;
+            }
+            
+            this->_appendedVariables.emplace(variableName, variable);
+        }
+
+        void executeAppendedMethod(char* methodName) {
+            this->_appendedMethods.at(methodName)();
+        }
+
+        uint8_t getAppendedVariable(char* variableName) {
+            return this->_appendedVariables.at(variableName);
         }
 
     protected:
@@ -130,8 +155,9 @@ class Sensor{
         SensorUtils::FunctionNode* _setupFuncHead = nullptr;
         SensorUtils::FunctionNode* _loopFuncHead = nullptr;
 
-        //APPENDED METHODS, stored in hash table
-        std::unordered_map<std::string_view, SensorUtils::FunctionCallback> _appendedMethods;
+        //APPENDED METHODS AND VARIABLES, stored in hash tables
+        std::unordered_map<std::string_view, SensorUtils::FunctionCallback> _appendedMethods = {};
+        std::unordered_map<std::string_view, uint8_t> _appendedVariables = {};
 
         void executeFunctionList(FunctionReferences targetList) {
             // Execute all of the functions in the linked list
@@ -166,18 +192,21 @@ class Sensor{
         // TASK LOOP utilized within the actual RTOS task
         void taskLoop() {
             // Loop on RTOS TASK
-
-            {
-                LockGuard loopLock = LockGuard(this->_mutexReference);
-                if (!loopLock.isMutexLocked()) {
-                    // Run a delay on the RTOS task, the mutex is not
-                    // currently available
-                    vTaskDelay(pdMS_TO_TICKS(LOCK_FAIL_DELAY));
-                } else {
-                    
-                    //Execute Loop Functions
-                    this->executeFunctionList(ON_LOOP);
+            for (;;) {
+                {
+                    LockGuard loopLock = LockGuard(this->_mutexReference);
+                    if (!loopLock.isMutexLocked()) {
+                        // Run a delay on the RTOS task, the mutex is not
+                        // currently available
+                        vTaskDelay(pdMS_TO_TICKS(LOCK_FAIL_DELAY));
+                    } else {
+                        
+                        //Execute Loop Functions
+                        this->executeFunctionList(ON_LOOP);
+                    }
                 }
+
+                vTaskDelay(pdMS_TO_TICKS(10));
             }
         }
 
