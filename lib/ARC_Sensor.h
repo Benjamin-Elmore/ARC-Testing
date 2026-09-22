@@ -12,6 +12,7 @@
 
 // OUTSIDE IMPORTS
 #include "SensorUtils.h"
+#include "LockGuard.h"
 
 // MAXIMUM VALUES PER SENSOR
 #ifndef SENSOR_MAX_FILTERS
@@ -29,8 +30,14 @@
 #ifndef SENSOR_USER_SLOTS
 #define SENSOR_USER_SLOTS  4  // Number of per-sensor float scratch values.
 #endif
+#ifndef DEFAULT_PRIORITY
+#define DEFAULT_PRIORITY 1
+#endif
+#ifndef LOCK_FAIL_DELAY
+#define LOCK_FAIL_DELAY 50
+#endif
 
-typedef enum FunctionReferences {
+enum FunctionReferences {
     ON_SETUP,
     ON_LOOP
 };
@@ -45,11 +52,12 @@ class Sensor{
                 char* name,                                                                     // NAME of the Sensor
                 SemaphoreHandle_t& mutexReference,                                              // MUTEX for the sensor
                 uint8_t muxChannel = SensorUtils::UNUSED_MUX,                                   // MUX channel
+                uint8_t priority = DEFAULT_PRIORITY,                                            // SENSOR TASK PRIORITY
                 std::initializer_list <SensorUtils::FunctionCallback> appendedOnSetup = {},     // STARTUP FUNCTIONS
                 std::initializer_list<SensorUtils::FunctionCallback> appendedOnLoop = {},       // LOOP FUNCTIONS
-                std::initializer_list<SensorUtils::AppendedMethod> appendedMethods = {}
+                std::initializer_list<SensorUtils::AppendedMethod> appendedMethods = {}         // APPENDED METHODS
             )
-            : _name(name), _mutexReference(mutexReference), _muxChannel(muxChannel)
+            : _name(name), _mutexReference(mutexReference), _muxChannel(muxChannel), _priority(priority)
         {
 
             // SETUP AND LOOP SETUP
@@ -73,13 +81,16 @@ class Sensor{
         
         void setup() {
             // Setup the sensor, and start the RTOS task
+            // When a child class inherits this class, the super
+            // of setup() must be called.
 
             // Execute the functions in the "on startup" list
             // Only completed if there are functions in the list
             if (this->_setupFuncHead != nullptr){
-                this->_executeFunctionList(ON_SETUP);
+                this->executeFunctionList(ON_SETUP);
             }
 
+            // Create the RTOS Task and store it in taskObject
             xTaskCreatePinnedToCore(
                 _taskEntry,             //Task Loop
                 this->_name,            //Loop Name
@@ -87,16 +98,15 @@ class Sensor{
                 this,                   //Ptr to task object
                 1,                      //Priority
                 &(this->_taskObject),   //taskHandle_t in SensorParent
-                1                       //Core
+                this->_core             //Core
             );
         }
 
-        void readRaw();
-
         void appendMethod(SensorUtils::AppendedMethod function) {
             // Append a method to the hash table
+
             if (this->_appendedMethods.size() >= SENSOR_MAX_METHODS) {
-                this->_status == SensorUtils::SENSOR_ERR_FULL;
+                this->_status = SensorUtils::SENSOR_ERR_FULL;
             }
             
             this->_appendedMethods.emplace(function.methodName, function.method);
@@ -124,6 +134,8 @@ class Sensor{
         std::unordered_map<std::string_view, SensorUtils::FunctionCallback> _appendedMethods;
 
         void executeFunctionList(FunctionReferences targetList) {
+            // Execute all of the functions in the linked list
+
             SensorUtils::FunctionNode* iterator = nullptr;
 
             switch(targetList){
@@ -144,17 +156,37 @@ class Sensor{
             // No functions located within the list
             if (iterator == nullptr) {return;}
 
+            // Execute the listed functions
             while (iterator->next != nullptr) {
-                // Execute the listed functions
                 iterator->function();
                 iterator = iterator->next;
             }
         }
 
         // TASK LOOP utilized within the actual RTOS task
-        void taskLoop();
+        void taskLoop() {
+            // Loop on RTOS TASK
+
+            {
+                LockGuard loopLock = LockGuard(this->_mutexReference);
+                if (!loopLock.isMutexLocked()) {
+                    // Run a delay on the RTOS task, the mutex is not
+                    // currently available
+                    vTaskDelay(pdMS_TO_TICKS(LOCK_FAIL_DELAY));
+                } else {
+                    
+                    //Execute Loop Functions
+                    this->executeFunctionList(ON_LOOP);
+                }
+            }
+        }
+
     private:
         //STATUS FIELDS
+
+        uint8_t _core{1};
+        uint8_t _priority{DEFAULT_PRIORITY};
+
         bool _exceededMaximums{false};
         SensorUtils::sensor_status_t _status {SensorUtils::SENSOR_ERR_NOT_READY};
 
