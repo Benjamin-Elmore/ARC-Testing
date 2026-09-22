@@ -30,6 +30,10 @@
 #define SENSOR_USER_SLOTS  4  // Number of per-sensor float scratch values.
 #endif
 
+typedef enum FunctionReferences {
+    ON_SETUP,
+    ON_LOOP
+};
 
 class Sensor{
     public:
@@ -67,7 +71,25 @@ class Sensor{
         // Default for the sensor
         ~Sensor() = default;
         
-        void setup();
+        void setup() {
+            // Setup the sensor, and start the RTOS task
+
+            // Execute the functions in the "on startup" list
+            // Only completed if there are functions in the list
+            if (this->_setupFuncHead != nullptr){
+                this->_executeFunctionList(ON_SETUP);
+            }
+
+            xTaskCreatePinnedToCore(
+                _taskEntry,             //Task Loop
+                this->_name,            //Loop Name
+                4096,                   //Stack size
+                this,                   //Ptr to task object
+                1,                      //Priority
+                &(this->_taskObject),   //taskHandle_t in SensorParent
+                1                       //Core
+            );
+        }
 
         void readRaw();
 
@@ -100,6 +122,34 @@ class Sensor{
 
         //APPENDED METHODS, stored in hash table
         std::unordered_map<std::string_view, SensorUtils::FunctionCallback> _appendedMethods;
+
+        void executeFunctionList(FunctionReferences targetList) {
+            SensorUtils::FunctionNode* iterator = nullptr;
+
+            switch(targetList){
+                case ON_LOOP:
+                    // Loop Functions after data pulling
+                    iterator = this->_loopFuncHead;
+                    break;
+
+                case ON_SETUP:
+                    //Setup functions before creating the RTOS task
+                    iterator = this->_setupFuncHead;
+                    break;
+
+                default:
+                    return;
+            }
+
+            // No functions located within the list
+            if (iterator == nullptr) {return;}
+
+            while (iterator->next != nullptr) {
+                // Execute the listed functions
+                iterator->function();
+                iterator = iterator->next;
+            }
+        }
 
         // TASK LOOP utilized within the actual RTOS task
         void taskLoop();

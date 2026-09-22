@@ -43,7 +43,7 @@ namespace SensorUtils {
         // Node structure for function linked list
 
         FunctionCallback function;
-        FunctionNode* next;
+        FunctionNode* next = nullptr;
 
         // CONSTRUCTOR: Intake the function, next pointer will be added in
         // subsequent declaration
