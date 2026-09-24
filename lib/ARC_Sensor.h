@@ -45,6 +45,13 @@ enum FunctionReferences {
     ON_LOOP
 };
 
+enum SensorPreconfig {
+    PRECONFIG_NONE,
+    PRECONFIG_OPTICAL,
+    PRECONFIG_COLOR,
+    PRECONFIG_ENCODER
+};
+
 class Sensor{
     public:
         // CONSTRUCTOR:
@@ -54,12 +61,14 @@ class Sensor{
         Sensor (
                 char* name,                                                                     // NAME of the Sensor
                 SemaphoreHandle_t& mutexReference,                                              // MUTEX for the sensor
+                SensorPreconfig sensorType = NONE,                                              // SENSOR PRECONFIG
                 uint8_t muxChannel = SensorUtils::UNUSED_MUX,                                   // MUX channel
                 uint8_t priority = DEFAULT_PRIORITY,                                            // SENSOR TASK PRIORITY
                 std::initializer_list <SensorUtils::FunctionCallback> appendedOnSetup = {},     // STARTUP FUNCTIONS
                 std::initializer_list<SensorUtils::FunctionCallback> appendedOnLoop = {},       // LOOP FUNCTIONS
                 std::initializer_list<SensorUtils::AppendedMethod> appendedMethods = {},        // APPENDED METHODS
-                std::initializer_list<SensorUtils::AppendedVariable> appendedVariables = {}     // APPENDED VARIABLES
+                std::initializer_list<SensorUtils::AppendedVariable> appendedVariables = {},    // APPENDED VARIABLES
+                SensorUtils::FunctionCallback SensorReadFunction = NULL                         // READ FUNCTION,
             )
             : _name(name), _mutexReference(mutexReference), _muxChannel(muxChannel), _priority(priority)
         {
@@ -79,6 +88,10 @@ class Sensor{
             }
             for (const SensorUtils::AppendedVariable& variable : appendedVariables) {
                 this->appendVariable(variable.variableName, variable.variable);
+            }
+
+            if (sensorType != NONE){
+                //TODO: Add preconfig function for reader
             }
         }
 
@@ -101,9 +114,9 @@ class Sensor{
             xTaskCreatePinnedToCore(
                 _taskEntry,             //Task Loop
                 this->_name,            //Loop Name
-                TASK_STACK_SIZE,                   //Stack size
+                TASK_STACK_SIZE,        //Stack size
                 this,                   //Ptr to task object
-                this->_priority,                      //Priority
+                this->_priority,        //Priority
                 &(this->_taskObject),   //taskHandle_t in SensorParent
                 this->_core             //Core
             );
@@ -146,6 +159,8 @@ class Sensor{
         // Constructor-defined variables
         char* _name;
         SemaphoreHandle_t& _mutexReference;
+
+        SensorUtils::FunctionCallback readFunction = NULL;
 
         //OPTIONAL MEMBERS:
         uint8_t _muxChannel;
@@ -199,11 +214,14 @@ class Sensor{
                         // Run a delay on the RTOS task, the mutex is not
                         // currently available
                         vTaskDelay(pdMS_TO_TICKS(LOCK_FAIL_DELAY));
-                    } else {
-                        
-                        //Execute Loop Functions
-                        this->executeFunctionList(ON_LOOP);
+                    } else if (this->readFunction != NULL) {
+                        this->readFunction();
                     }
+                }
+
+                //Execute Loop Functions outside of mutex lock
+                if (this->_loopFuncHead != nullptr){
+                    this->executeFunctionList(ON_LOOP);
                 }
 
                 vTaskDelay(pdMS_TO_TICKS(10));
