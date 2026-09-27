@@ -61,7 +61,7 @@ class Sensor{
         Sensor (
                 char* name,                                                                     // NAME of the Sensor
                 SemaphoreHandle_t& mutexReference,                                              // MUTEX for the sensor
-                SensorPreconfig sensorType = SensorPreconfig::NONE,                                              // SENSOR PRECONFIG
+                SensorPreconfig sensorType = SensorPreconfig::NONE,                             // SENSOR PRECONFIG
                 uint8_t muxChannel = SensorUtils::UNUSED_MUX,                                   // MUX channel
                 uint8_t priority = DEFAULT_PRIORITY,                                            // SENSOR TASK PRIORITY
                 std::initializer_list <SensorUtils::FunctionCallback> appendedOnSetup = {},     // STARTUP FUNCTIONS

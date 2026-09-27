@@ -3,6 +3,7 @@
 //FreeRTOS includes
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "Mux.h"
 
 class LockGuard {
     //Class structure that automatically locks the mutex that
