@@ -19,7 +19,7 @@ namespace Mux {
     // MUX HANDLE
     i2c_master_dev_handle_t muxHandle;
 
-    void setup (){
+    inline void setup (){
         // Configuration function for I2C
 
         //Main I2C Config
@@ -53,7 +53,7 @@ namespace Mux {
         muxMutex = xSemaphoreCreateMutex();
     }
 
-    bool selectChannel (const uint8_t channel) {
+    inline bool selectChannel (const uint8_t channel) {
         // Select a target channel on the mux
 
         if (channel > UINT_MUX_LENGTH) { return false; } // The channel for the mux is invalid
