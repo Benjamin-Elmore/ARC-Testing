@@ -1,4 +1,5 @@
 #pragma once
+#include "freertos/FreeRTOS.h"
 #include "driver/i2c_master.h"
 
 #define I2C_MASTER_SCL      GPIO_NUM_9
@@ -10,6 +11,8 @@
 #define UINT_MUX_LENGTH     7
 
 namespace Mux {
+
+    SemaphoreHandle_t muxMutex = nullptr;
 
     // BUS HANDLE
     i2c_master_bus_handle_t busHandle;
@@ -45,6 +48,9 @@ namespace Mux {
 
         // Add the mux to the I2C Master Bus
         i2c_master_bus_add_device(busHandle, &muxConfig, &muxHandle);
+
+        // Instantiate the Mux Mutex
+        muxMutex = xSemaphoreCreateMutex();
     }
 
     bool selectChannel (const uint8_t channel) {
