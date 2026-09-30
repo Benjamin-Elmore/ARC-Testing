@@ -15,11 +15,11 @@ namespace Mux {
     SemaphoreHandle_t muxMutex = nullptr;
 
     // BUS HANDLE
-    i2c_master_bus_handle_t busHandle;
+    i2c_master_bus_handle_t busHandle = nullptr;
     // MUX HANDLE
-    i2c_master_dev_handle_t muxHandle;
+    i2c_master_dev_handle_t muxHandle = nullptr;
 
-    inline void setup (){
+    inline esp_err_t setup (){
         // Configuration function for I2C
 
         //Main I2C Config
@@ -36,8 +36,9 @@ namespace Mux {
             },
         };
 
-        // Master Bus for I2C
-        i2c_new_master_bus(&i2cMasterConfig, &busHandle);
+        // Master Bus for I2C, if there's an error throw it to the declaration
+        esp_err_t status = i2c_new_master_bus(&i2cMasterConfig, &busHandle);
+        if (status != ESP_OK) { return status; }
 
         // Mux Configuration
         i2c_device_config_t muxConfig = {
@@ -46,26 +47,35 @@ namespace Mux {
             .scl_speed_hz = 10000,
         };
 
-        // Add the mux to the I2C Master Bus
-        i2c_master_bus_add_device(busHandle, &muxConfig, &muxHandle);
+        // Add the mux to the I2C Master Bus, return if !ESP_OK
+        status = i2c_master_bus_add_device(busHandle, &muxConfig, &muxHandle);
+        if (status != ESP_OK) { return status; }
 
         // Instantiate the Mux Mutex
         muxMutex = xSemaphoreCreateMutex();
+
+        //Everything was instantiated without failures
+        return ESP_OK;
     }
 
-    inline bool selectChannel (const uint8_t channel) {
+    inline esp_err_t selectChannel (const uint8_t channel) {
         // Select a target channel on the mux
 
-        if (channel > UINT_MUX_LENGTH) { return false; } // The channel for the mux is invalid
+        // The channel for the mux is invalid
+        if (channel > UINT_MUX_LENGTH || channel < 0) {
+            return ESP_ERR_INVALID_ARG;
+        }
 
+        // Target channel
         uint8_t controlRegister = (1 << channel);
 
         esp_err_t ret = i2c_master_transmit(muxHandle, &controlRegister, 1, -1);
         
         if (ret != ESP_OK) {
-            return false;
+            return ret;
         }
 
-        return true;
+        // Channel was successfully created
+        return ESP_OK;
     }
 }

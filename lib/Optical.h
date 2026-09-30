@@ -26,7 +26,6 @@ namespace Optical {
 
     inline esp_err_t setup() {
         if (Mux::busHandle == nullptr) { return ESP_ERR_INVALID_STATE; }
-        if (opticalHandle != nullptr) { return ESP_OK; }
 
         i2c_device_config_t opticalConfig{};
         opticalConfig.dev_addr_length = I2C_ADDR_BIT_LEN_7;
@@ -73,12 +72,17 @@ namespace Optical {
 
     inline esp_err_t getOpticalPosition(OpticalPacket &packet) {
         // Get the positioning from the optical sensor
+        // Packet data is stored in packet reference,
+        // ESP status is returned
 
         if (opticalHandle == nullptr) { return ESP_ERR_INVALID_STATE; }
 
         uint8_t opticalData[6]{};
-        if(readRegister(OTOS_REG_POS, opticalData, sizeof(opticalData)/ sizeof(opticalData[0])) != ESP_OK){
-            return ESP_ERR_INVALID_STATE;
+
+        esp_err_t status = readRegister(OTOS_REG_POS, opticalData, sizeof(opticalData)/ sizeof(opticalData[0]));
+
+        if(status != ESP_OK){
+            return status;
         }
 
         packet.x = static_cast<int16_t>(opticalData[0] | (opticalData[1] << 8));     // X Positioning
