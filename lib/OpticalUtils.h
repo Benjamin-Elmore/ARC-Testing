@@ -24,8 +24,14 @@ namespace Optical {
 
     i2c_master_dev_handle_t opticalHandle = nullptr;
 
-    inline esp_err_t setup() {
+    inline esp_err_t setup(const uint8_t channel) {
         if (Mux::busHandle == nullptr) { return ESP_ERR_INVALID_STATE; }
+
+        // Ensure that the mux is on the correct channel before completing the
+        // setup
+        esp_err_t channelValidation = Mux::selectChannel(channel);
+
+        if (channelValidation != ESP_OK) { return channelValidation; }
 
         i2c_device_config_t opticalConfig{};
         opticalConfig.dev_addr_length = I2C_ADDR_BIT_LEN_7;

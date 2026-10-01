@@ -1,9 +1,14 @@
 #include <stdio.h>
 #include "ARC_Sensor.h"
+#include "Mux.h"
+#include "OpticalUtils.h"
 
 extern "C" void app_main(void)
 {
     
+    esp_err_t muxStatus = Mux::setup();
+
+
     for(;;){
         
     }

@@ -19,6 +19,8 @@ namespace Mux {
     // MUX HANDLE
     i2c_master_dev_handle_t muxHandle = nullptr;
 
+    uint8_t currentChannel = 0xFF;
+
     inline esp_err_t setup (){
         // Configuration function for I2C
 
@@ -61,8 +63,11 @@ namespace Mux {
     inline esp_err_t selectChannel (const uint8_t channel) {
         // Select a target channel on the mux
 
+        // Target channel is already selected
+        if (channel == currentChannel) { return ESP_OK; }
+
         // The channel for the mux is invalid
-        if (channel > UINT_MUX_LENGTH || channel < 0) {
+        if (channel > UINT_MUX_LENGTH) {
             return ESP_ERR_INVALID_ARG;
         }
 

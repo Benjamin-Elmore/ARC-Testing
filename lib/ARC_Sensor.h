@@ -14,7 +14,7 @@
 #include "SensorUtils.h"
 #include "LockGuard.h"
 #include "Vec3.h"
-#include "Optical.h"
+#include "OpticalUtils.h"
 
 // MAXIMUM VALUES PER SENSOR
 #ifndef SENSOR_MAX_FILTERS
