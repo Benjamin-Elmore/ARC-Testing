@@ -4,6 +4,7 @@
 #include <functional>
 #include <unordered_map>
 #include <string_view>
+#include <list>
 
 // RTOS
 #include "freertos/FreeRTOS.h"
@@ -15,6 +16,7 @@
 #include "LockGuard.h"
 #include "Vec3.h"
 #include "OpticalUtils.h"
+#include "OpticalPreconfig.h"
 
 // MAXIMUM VALUES PER SENSOR
 #ifndef SENSOR_MAX_FILTERS
@@ -75,13 +77,24 @@ class Sensor{
             : _name(name), _mutexReference(mutexReference), _muxChannel(muxChannel), _priority(priority)
         {
 
+            if (sensorType != SensorPreconfig::NONE){
+                //TODO: Add preconfig function for reader
+            }
             // SETUP AND LOOP SETUP
             // the FuncHead fields hold the head of the linked list
             if (appendedOnSetup.size() != 0){
-                this->_setupFuncHead = SensorUtils::linkFunctionCallback(appendedOnSetup);
+                // Appended functions are in the init list
+
+                for (const SensorUtils::FunctionCallback func : appendedOnSetup) {
+                    this->_setupFuncs.push_back(func);
+                }
             }
             if (appendedOnLoop.size() != 0){
-                this->_loopFuncHead = SensorUtils::linkFunctionCallback(appendedOnLoop);
+                // Appended functions are in the init list
+
+                for (const SensorUtils::FunctionCallback func : appendedOnLoop) {
+                    this->_loopFuncs.push_back(func);
+                }
             }
             
             // APPENDED METHODS SETUP
@@ -90,10 +103,6 @@ class Sensor{
             }
             for (const SensorUtils::AppendedVariable& variable : appendedVariables) {
                 this->appendVariable(variable.variableName, variable.variable);
-            }
-
-            if (sensorType != SensorPreconfig::NONE){
-                //TODO: Add preconfig function for reader
             }
         }
 
@@ -108,8 +117,8 @@ class Sensor{
 
             // Execute the functions in the "on startup" list
             // Only completed if there are functions in the list
-            if (this->_setupFuncHead != nullptr){
-                this->executeFunctionList(ON_SETUP);
+            if (!this->_setupFuncs.empty()){
+                this->executeFunctionList(this->_setupFuncs);
             }
 
             // Create the RTOS Task and store it in taskObject
@@ -152,6 +161,13 @@ class Sensor{
             return this->_appendedVariables.at(variableName);
         }
 
+        void appendSetupFunc(SensorUtils::FunctionCallback function) {
+            this->_setupFuncs.push_back(function);
+        }
+        void appendLoopFunc(SensorUtils::FunctionCallback function) {
+            this->_setupFuncs.push_back(function);
+        }
+
     protected:
         // Meant to be interfaced with in child classes
 
@@ -169,40 +185,18 @@ class Sensor{
 
         // SETUP AND LOOP FUNCTIONS, stored in linked list
         // Pointers to the head of each function list:
-        SensorUtils::FunctionNode* _setupFuncHead = nullptr;
-        SensorUtils::FunctionNode* _loopFuncHead = nullptr;
+        std::list<SensorUtils::FunctionCallback> _setupFuncs{};
+        std::list<SensorUtils::FunctionCallback> _loopFuncs{};
 
         //APPENDED METHODS AND VARIABLES, stored in hash tables
         std::unordered_map<std::string_view, SensorUtils::FunctionCallback> _appendedMethods = {};
         std::unordered_map<std::string_view, uint8_t> _appendedVariables = {};
 
-        void executeFunctionList(FunctionReferences targetList) {
+        void executeFunctionList(std::list<SensorUtils::FunctionCallback>& funcList) {
             // Execute all of the functions in the linked list
 
-            SensorUtils::FunctionNode* iterator = nullptr;
-
-            switch(targetList){
-                case ON_LOOP:
-                    // Loop Functions after data pulling
-                    iterator = this->_loopFuncHead;
-                    break;
-
-                case ON_SETUP:
-                    //Setup functions before creating the RTOS task
-                    iterator = this->_setupFuncHead;
-                    break;
-
-                default:
-                    return;
-            }
-
-            // No functions located within the list
-            if (iterator == nullptr) {return;}
-
-            // Execute the listed functions
-            while (iterator->next != nullptr) {
-                iterator->function();
-                iterator = iterator->next;
+            for (const SensorUtils::FunctionCallback func : funcList){
+                func();
             }
         }
 
@@ -222,8 +216,8 @@ class Sensor{
                 }
 
                 //Execute Loop Functions outside of mutex lock
-                if (this->_loopFuncHead != nullptr){
-                    this->executeFunctionList(ON_LOOP);
+                if (!this->_loopFuncs.empty()){
+                    this->executeFunctionList(this->_loopFuncs);
                 }
 
                 vTaskDelay(pdMS_TO_TICKS(10));

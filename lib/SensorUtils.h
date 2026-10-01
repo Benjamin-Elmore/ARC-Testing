@@ -39,17 +39,6 @@ namespace SensorUtils {
     return "?";  // Defensive fallback for an invalid/out-of-range enum value.
 }
 
-    struct FunctionNode {
-        // Node structure for function linked list
-
-        FunctionCallback function;
-        FunctionNode* next = nullptr;
-
-        // CONSTRUCTOR: Intake the function, next pointer will be added in
-        // subsequent declaration
-        FunctionNode(SensorUtils::FunctionCallback func) : function(func){};
-    };
-
     struct AppendedMethod {
         char* methodName;
         FunctionCallback method;
@@ -63,26 +52,4 @@ namespace SensorUtils {
 
         AppendedVariable(char* name, uint8_t variable) : variableName(name), variable(variable){};
     };
-
-    FunctionNode* linkFunctionCallback (std::initializer_list<FunctionCallback>& functionList) {
-        // Create a linked-list for functions being used
-
-        if (functionList.size() == 0) { return nullptr; }
-
-        FunctionNode* head = nullptr;
-        FunctionNode* tail;
-
-        for (const FunctionCallback& function : functionList) {
-            FunctionNode* newNode = new FunctionNode(function);
-            if (head == nullptr){
-                head = newNode;
-                tail = newNode;
-            } else {
-                tail->next = newNode;
-                tail = newNode;
-            }
-        }
-
-        return head;
-    }
 }

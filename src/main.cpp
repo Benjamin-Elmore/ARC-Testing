@@ -5,8 +5,7 @@
 
 extern "C" void app_main(void)
 {
-    
-    esp_err_t muxStatus = Mux::setup();
+    Sensor mySensor("Optical", Mux::muxMutex);
 
 
     for(;;){
