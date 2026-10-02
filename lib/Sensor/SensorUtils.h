@@ -4,6 +4,7 @@
 
 namespace SensorUtils {
     constexpr uint8_t UNUSED_MUX = 0xFF;
+    constexpr uint8_t ADDR_NOT_INCLUDED = 0xFF;
 
     //STRUCTURE OF A FUNCTION CALLBACK
     using FunctionCallback = void(*)();

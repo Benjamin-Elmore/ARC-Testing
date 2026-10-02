@@ -65,14 +65,15 @@ class Sensor{
         Sensor (
                 char* name,                                                                     // NAME of the Sensor
                 SemaphoreHandle_t& mutexReference,                                              // MUTEX for the sensor
+                uint8_t deviceAddrI2C,                                                          // I2C ADDRESS
                 SensorPreconfig sensorType = SensorPreconfig::NONE,                             // SENSOR PRECONFIG
-                uint8_t muxChannel = SensorUtils::UNUSED_MUX,                                   // MUX channel
+                uint8_t muxChannel = SensorUtils::UNUSED_MUX,                                   // MUX CHANNEL
                 uint8_t priority = DEFAULT_PRIORITY,                                            // SENSOR TASK PRIORITY
                 std::initializer_list <SensorUtils::FunctionCallback> appendedOnSetup = {},     // STARTUP FUNCTIONS
                 std::initializer_list<SensorUtils::FunctionCallback> appendedOnLoop = {},       // LOOP FUNCTIONS
                 std::initializer_list<SensorUtils::AppendedMethod> appendedMethods = {},        // APPENDED METHODS
                 std::initializer_list<SensorUtils::AppendedVariable> appendedVariables = {},    // APPENDED VARIABLES
-                SensorUtils::FunctionCallback SensorReadFunction = NULL                         // READ FUNCTION,
+                SensorUtils::FunctionCallback SensorReadFunction = NULL                         // READ FUNCTION
             )
             : _name(name), _mutexReference(mutexReference), _muxChannel(muxChannel), _priority(priority)
         {
@@ -168,6 +169,12 @@ class Sensor{
             this->_setupFuncs.push_back(function);
         }
 
+        uint8_t getAddressI2C() { return this->_devAddrI2C; }
+
+        std::string_view getName() { return this->_name; }
+
+        uint8_t getMuxI2C() { return this->_muxChannel; }
+
     protected:
         // Meant to be interfaced with in child classes
 
@@ -181,7 +188,8 @@ class Sensor{
         SensorUtils::FunctionCallback readFunction = NULL;
 
         //OPTIONAL MEMBERS:
-        uint8_t _muxChannel;
+        uint8_t _muxChannel = SensorUtils::UNUSED_MUX;
+        uint8_t _devAddrI2C = SensorUtils::ADDR_NOT_INCLUDED;
 
         // SETUP AND LOOP FUNCTIONS, stored in linked list
         // Pointers to the head of each function list:

@@ -6,9 +6,7 @@
 
 extern "C" void app_main(void)
 {
-    Sensor mySensor("Optical", Mux::muxMutex);
-
-
+    
     for(;;){
         
     }
