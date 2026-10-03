@@ -7,7 +7,7 @@
 #include "driver/i2c_master.h"
 #include "freertos/FreeRTOS.h"
 
-#include "ARC_Sensor.h"
+#include "LockGuard.h"
 
 #define MUX_CHANNEL_CT 8
 
@@ -79,18 +79,20 @@ public:
         this->_busMutex = xSemaphoreCreateMutex();
     }
 
-    esp_err_t addSensorClassToBus (Sensor& sensor) {
+    esp_err_t addSensorClassToBus (std::string_view name, uint8_t muxChannel, uint8_t i2cAddress) {
+
+        if (this->_registryMap.contains(name)) { return ESP_ERR_INVALID_ARG; }
 
         SensorRegistry newSensorRegistry = new SensorRegistry(
-            sensor.getMuxI2C() / MUX_CHANNEL_CT,                // MUX Index
-            sensor.getMuxI2C() % MUX_CHANNEL_CT                 // MUX Channel within Index
+            muxChannel / MUX_CHANNEL_CT,                // MUX Index
+            muxChannel % MUX_CHANNEL_CT                 // MUX Channel within Index
         );
 
-        this->_registryMap.emplace(sensor.getName(), newSensorRegistry);
+        this->_registryMap.emplace(name, newSensorRegistry);
 
         i2c_device_config_t sensorConfig = {
             .dev_addr_length = I2C_ADDR_BIT_7,
-            .deviceAddress = sensor.getAddressI2C(),
+            .deviceAddress = i2cAddress,
             .scl_speed_hz = 100000,
         };
 
@@ -109,6 +111,8 @@ public:
     // Getter for the status of the bus, based on esp_err_t
     esp_err_t getStatus() { return this->_errorStatus; }
 
+    SemaphoreHandle_t& getMutex(){ return this->_busMutex; }
+
 private:
     // Handle for I2C bus
     i2c_master_bus_handle_t _busHandle = nullptr;
@@ -125,7 +129,6 @@ private:
     const std::array<uint8_t, N> _muxAddresses{};
     std::array<i2c_master_dev_handle_t, N> _muxHandles{};
 
-    std::unordered_map<std::string_view, Sensor&> _busSensors{};
     std::unordered_map<std::string_view, SensorRegistry> _registryMap{};
     
     // Status of the mux

@@ -17,6 +17,7 @@
 #include "Vec3.h"
 #include "OpticalUtils.h"
 #include "OpticalPreconfig.h"
+#include "I2CBus.h"
 
 // MAXIMUM VALUES PER SENSOR
 #ifndef SENSOR_MAX_FILTERS
@@ -55,7 +56,7 @@ enum SensorPreconfig {
     COLOR,
     ENCODER
 };
-
+template <size_t N>
 class Sensor{
     public:
         // CONSTRUCTOR:
@@ -64,7 +65,7 @@ class Sensor{
         // the mux exists on.
         Sensor (
                 char* name,                                                                     // NAME of the Sensor
-                SemaphoreHandle_t& mutexReference,                                              // MUTEX for the sensor
+                I2CBus<N>& sensorCommBus,                                                       // BUS CLASS for Sensor 
                 uint8_t deviceAddrI2C,                                                          // I2C ADDRESS
                 SensorPreconfig sensorType = SensorPreconfig::NONE,                             // SENSOR PRECONFIG
                 uint8_t muxChannel = SensorUtils::UNUSED_MUX,                                   // MUX CHANNEL
@@ -75,7 +76,7 @@ class Sensor{
                 std::initializer_list<SensorUtils::AppendedVariable> appendedVariables = {},    // APPENDED VARIABLES
                 SensorUtils::FunctionCallback SensorReadFunction = NULL                         // READ FUNCTION
             )
-            : _name(name), _mutexReference(mutexReference), _muxChannel(muxChannel), _priority(priority)
+            : _name(name), _sensorCommBusI2C(sensorCommBus), _muxChannel(muxChannel), _priority(priority)
         {
 
             if (sensorType != SensorPreconfig::NONE){
@@ -115,6 +116,13 @@ class Sensor{
             // Setup the sensor, and start the RTOS task
             // When a child class inherits this class, the super
             // of setup() must be called.
+
+            // Add the sensor to the I2C bus with its address identifier
+            this->_sensorCommBusI2C.addSensorClassToBus(
+                this->getName(),
+                this->_muxChannel,
+                this->_devAddrI2C
+            );
 
             // Execute the functions in the "on startup" list
             // Only completed if there are functions in the list
@@ -213,12 +221,16 @@ class Sensor{
             // Loop on RTOS TASK
             for (;;) {
                 {
-                    LockGuard loopLock = LockGuard(this->_mutexReference);
+                    // Lock the bus mutex with a Lockguard, if it is not currently available
+                    // we will run a delay on the mutex
+                    LockGuard loopLock = LockGuard(this->_sensorCommBusI2C.getMutex());
                     if (!loopLock.isMutexLocked()) {
                         // Run a delay on the RTOS task, the mutex is not
                         // currently available
                         vTaskDelay(pdMS_TO_TICKS(LOCK_FAIL_DELAY));
+
                     } else if (this->readFunction != NULL) {
+                        // Run the preconfigured read function
                         this->readFunction();
                     }
                 }
@@ -234,6 +246,8 @@ class Sensor{
 
     private:
         //STATUS FIELDS
+
+        I2CBus<N>& _sensorCommBusI2C;
 
         uint8_t _core{1};
         uint8_t _priority{DEFAULT_PRIORITY};
