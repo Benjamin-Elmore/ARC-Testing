@@ -13,12 +13,6 @@
 #define OTOS_REG_VEL            0x26  // 6 bytes (Vel_X, Vel_Y, Vel_H)
 #define OTOS_REG_ACC            0x2C  // 6 bytes (Acc_X, Acc_Y, Acc_H)
 
-struct OpticalPacket {
-    int16_t x{};
-    int16_t y{};
-    int16_t h{};
-};
-
 namespace Optical {
     // Optical Functions that read and write to its registers
 
@@ -60,6 +54,14 @@ namespace Optical {
         return i2c_master_transmit(opticalHandle, writeBuffer, sizeof(writeBuffer), 1000);
     }
 
+    int16_t convertTo16Bits(const uint8_t* data) {
+        const uint16_t converted =
+            static_cast<uint16_t>(data[0]) |            // Rightmost data
+            (static_cast<uint16_t>(data[1] << 8));      // Leftmost data
+
+        return static_cast<int16_t>(converted);
+    }
+
     template<size_t S>
     esp_err_t writeArrayRegister(const uint8_t regAddr, const uint8_t (&array)[S]) {
         // Write an array of any length to a target
@@ -76,9 +78,10 @@ namespace Optical {
         return i2c_master_transmit(opticalHandle, writeBuffer, sizeof(writeBuffer), 1000);
     }
 
-    inline esp_err_t getOpticalPosition(OpticalPacket &packet) {
+    template <typename S>
+    inline esp_err_t getOpticalPosition(Vec3<S> &packet) {
         // Get the positioning from the optical sensor
-        // Packet data is stored in packet reference,
+        // Packet data is stored in vec3,
         // ESP status is returned
 
         if (opticalHandle == nullptr) { return ESP_ERR_INVALID_STATE; }
@@ -91,9 +94,9 @@ namespace Optical {
             return status;
         }
 
-        packet.x = static_cast<int16_t>(opticalData[0] | (opticalData[1] << 8));     // X Positioning
-        packet.y = static_cast<int16_t>(opticalData[2] | (opticalData[3] << 8));     // Y Positioning
-        packet.h = static_cast<int16_t>(opticalData[4] | (opticalData[5] << 8));     // Heading
+        packet.x = static_cast<S>(Optical::convertTo16Bits(&opticalData[0]));     // X Positioning
+        packet.y = static_cast<S>(Optical::convertTo16Bits(&opticalData[2]));     // Y Positioning
+        packet.z = static_cast<S>(Optical::convertTo16Bits(&opticalData[4]));     // Heading
 
         return ESP_OK;
     }
