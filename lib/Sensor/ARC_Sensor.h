@@ -73,7 +73,7 @@ class Sensor{
                 std::initializer_list<SensorUtils::FunctionCallback> appendedOnLoop = {},       // LOOP FUNCTIONS
                 std::initializer_list<SensorUtils::AppendedMethod> appendedMethods = {},        // APPENDED METHODS
                 std::initializer_list<SensorUtils::AppendedVariable> appendedVariables = {},    // APPENDED VARIABLES
-                SensorUtils::FunctionCallback SensorReadFunction = NULL                         // READ FUNCTION
+                SensorUtils::FunctionCallback sensorReadFunction = NULL                         // READ FUNCTION
             )
             : _name(name), _devAddrI2C(deviceAddrI2C), _sensorCommBusI2C(sensorCommBus), _muxChannel(muxChannel), _priority(priority)
         {
@@ -115,6 +115,12 @@ class Sensor{
             for (const SensorUtils::AppendedVariable& variable : appendedVariables) {
                 this->appendVariable(variable.variableName, variable.variable);
             }
+
+            if (sensorReadFunction != NULL) {
+                this->_readFunction = sensorReadFunction;
+            } else{
+                this->_status = SensorUtils::SENSOR_ERR_NO_READER;
+            }
         }
 
         // DESTRUCTOR:
@@ -127,11 +133,21 @@ class Sensor{
                 this->_taskObject = NULL;
             }
         }
-        
+
+        // NON COPY-ABILITY for the sensor class
+        // This prevents misues of copied instances
+        Sensor(const Sensor&) = delete;
+        Sensor& operator=(const Sensor&) = delete;
+
         void setup() {
             // Setup the sensor, and start the RTOS task
             // When a child class inherits this class, the super
             // of setup() must be called.
+
+            if(this->_setupRan) {
+                this->_status = SensorUtils::SENSOR_ERR_FUNC_CALL;
+                return;
+            }
 
             // Add the sensor to the I2C bus with its address identifier
             this->_sensorCommBusI2C.addSensorClassToBus(
@@ -147,7 +163,8 @@ class Sensor{
             }
 
             // Create the RTOS Task and store it in taskObject
-            xTaskCreatePinnedToCore(
+            BaseType_t status = xTaskCreatePinnedToCore
+            (
                 _taskEntry,             //Task Loop
                 this->_name,            //Loop Name
                 TASK_STACK_SIZE,        //Stack size
@@ -157,7 +174,12 @@ class Sensor{
                 this->_core             //Core
             );
 
-            this->_status = SensorUtils::SENSOR_OK;
+            if (status != pdFalse) {
+                this->_status = SensorUtils::SENSOR_OK;
+                this->_setupRan = true;
+            } else {
+                this->_status = SensorUtils::SENSOR_ERR_FAULT;
+            }
         }
 
         void appendMethod(char* functionName, SensorUtils::FunctionCallback function) {
@@ -193,6 +215,8 @@ class Sensor{
                 return this->_appendedVariables.at(variableName);
             } else {
                 this->_status = SensorUtils::SENSOR_ERR_NOT_FOUND;
+                // Return a sentinel value
+                return SensorUtils::FAULTY_VARIABLE;
             }
         }
 
@@ -228,7 +252,7 @@ class Sensor{
         // Constructor-defined variables
         char* _name;
 
-        SensorUtils::FunctionCallback readFunction = NULL;
+        SensorUtils::FunctionCallback _readFunction = NULL;
 
         //OPTIONAL MEMBERS:
         uint8_t _devAddrI2C = SensorUtils::ADDR_NOT_INCLUDED;
@@ -254,6 +278,14 @@ class Sensor{
         void taskLoop() {
             // Loop on RTOS TASK
             for (;;) {
+                if (this->_readFunction == NULL) {
+                    // The reader function does not exist, the delay needs to go in place
+                    // This task is useless without the critical read function
+
+                    vTaskDelay(pdMS_TO_TICKS(500));
+                    this->_status = SensorUtils::SENSOR_ERR_NO_READER;
+                }
+
                 {
                     // Lock the bus mutex with a Lockguard, if it is not currently available
                     // we will run a delay on the mutex
@@ -263,9 +295,10 @@ class Sensor{
                         // currently available
                         vTaskDelay(pdMS_TO_TICKS(LOCK_FAIL_DELAY));
 
-                    } else if (this->readFunction != NULL) {
+                    } else if (this->_readFunction != NULL) {
                         // Run the preconfigured read function
-                        this->readFunction();
+                        // The if statement is for safety
+                        this->_readFunction();
                     }
                 }
 
@@ -287,6 +320,7 @@ class Sensor{
         uint8_t _priority{DEFAULT_PRIORITY};
 
         bool _exceededMaximums{false};
+        bool _setupRan{false};
         SensorUtils::sensor_status_t _status {SensorUtils::SENSOR_ERR_NOT_READY};
 
         // WRAPPER ON TASK LOOP for RTOS Task
