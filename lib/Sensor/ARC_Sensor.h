@@ -174,7 +174,7 @@ class Sensor{
                 this->_core             //Core
             );
 
-            if (status != pdFalse) {
+            if (status != pdFALSE) {
                 this->_status = SensorUtils::SENSOR_OK;
                 this->_setupRan = true;
             } else {
