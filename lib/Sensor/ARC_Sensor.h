@@ -15,7 +15,6 @@
 #include "SensorUtils.h"
 #include "LockGuard.h"
 #include "Vec3.h"
-#include "OpticalUtils.h"
 #include "OpticalPreconfig.h"
 #include "I2CBus.h"
 
@@ -76,7 +75,7 @@ class Sensor{
                 std::initializer_list<SensorUtils::AppendedVariable> appendedVariables = {},    // APPENDED VARIABLES
                 SensorUtils::FunctionCallback SensorReadFunction = NULL                         // READ FUNCTION
             )
-            : _name(name), _sensorCommBusI2C(sensorCommBus), _muxChannel(muxChannel), _priority(priority)
+            : _name(name), _devAddrI2C(deviceAddrI2C), _sensorCommBusI2C(sensorCommBus), _muxChannel(muxChannel), _priority(priority)
         {
 
             if (sensorType != SensorPreconfig::NONE){
@@ -86,16 +85,26 @@ class Sensor{
             // the FuncHead fields hold the head of the linked list
             if (appendedOnSetup.size() != 0){
                 // Appended functions are in the init list
-
-                for (const SensorUtils::FunctionCallback func : appendedOnSetup) {
-                    this->_setupFuncs.push_back(func);
+                
+                if (appendedOnSetup.size() > SENSOR_MAX_ON_SETUP) {
+                    // Too many sensors in the setup
+                    this->_status = SensorUtils::SENSOR_ERR_ARG;
+                } else {
+                    for (const SensorUtils::FunctionCallback func : appendedOnSetup) {
+                        this->_setupFuncs.push_back(func);
+                    }
                 }
             }
             if (appendedOnLoop.size() != 0){
                 // Appended functions are in the init list
 
-                for (const SensorUtils::FunctionCallback func : appendedOnLoop) {
-                    this->_loopFuncs.push_back(func);
+                if (appendedOnLoop.size() > SENSOR_MAX_ON_LOOP) {
+                    // Too many sensors in the loop
+                    this->_status = SensorUtils::SENSOR_ERR_ARG;
+                } else {
+                    for (const SensorUtils::FunctionCallback func : appendedOnLoop) {
+                        this->_loopFuncs.push_back(func);
+                    }
                 }
             }
             
@@ -140,6 +149,8 @@ class Sensor{
                 &(this->_taskObject),   //taskHandle_t in SensorParent
                 this->_core             //Core
             );
+
+
         }
 
         void appendMethod(char* functionName, SensorUtils::FunctionCallback function) {
@@ -171,10 +182,20 @@ class Sensor{
         }
 
         void appendSetupFunc(SensorUtils::FunctionCallback function) {
-            this->_setupFuncs.push_back(function);
+            if (this->_setupFuncs.size() >= SENSOR_MAX_ON_SETUP) {
+                // Too many sensor in the setup
+                this->_status = SensorUtils::SENSOR_ERR_ARG;
+            } else {
+                this->_setupFuncs.push_back(function);
+            }
         }
         void appendLoopFunc(SensorUtils::FunctionCallback function) {
-            this->_setupFuncs.push_back(function);
+            if (this->_loopFuncs.size() > SENSOR_MAX_ON_LOOP) {
+                // Too many sensors in the loop
+                this->_status = SensorUtils::SENSOR_ERR_ARG;
+            } else {
+                this->_loopFuncs.push_back(function);
+            }
         }
 
         uint8_t getAddressI2C() { return this->_devAddrI2C; }
@@ -191,12 +212,10 @@ class Sensor{
 
         // Constructor-defined variables
         char* _name;
-        SemaphoreHandle_t& _mutexReference;
 
         SensorUtils::FunctionCallback readFunction = NULL;
 
         //OPTIONAL MEMBERS:
-        uint8_t _muxChannel = SensorUtils::UNUSED_MUX;
         uint8_t _devAddrI2C = SensorUtils::ADDR_NOT_INCLUDED;
 
         // SETUP AND LOOP FUNCTIONS, stored in linked list
@@ -246,8 +265,8 @@ class Sensor{
 
     private:
         //STATUS FIELDS
-
         I2CBus<N>& _sensorCommBusI2C;
+        uint8_t _muxChannel;
 
         uint8_t _core{1};
         uint8_t _priority{DEFAULT_PRIORITY};

@@ -8,6 +8,7 @@ namespace SensorUtils {
 
     //STRUCTURE OF A FUNCTION CALLBACK
     using FunctionCallback = void(*)();
+    using EspErrorCallback = esp_err_t(*)();
 
     typedef enum {
         SENSOR_OK = 0,            // Operation completed successfully.
