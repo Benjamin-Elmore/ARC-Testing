@@ -119,7 +119,14 @@ class Sensor{
 
         // DESTRUCTOR:
         // Default for the sensor
-        ~Sensor() = default;
+        ~Sensor() {
+            // If needed, end the RTOS task when the sensor is destroyed
+            // Set the taskHandle_t to not point to anything
+            if (this->_taskObject != NULL) {
+                vTaskDelete(this->_taskObject);
+                this->_taskObject = NULL;
+            }
+        }
         
         void setup() {
             // Setup the sensor, and start the RTOS task
@@ -150,7 +157,7 @@ class Sensor{
                 this->_core             //Core
             );
 
-
+            this->_status = SensorUtils::SENSOR_OK;
         }
 
         void appendMethod(char* functionName, SensorUtils::FunctionCallback function) {
@@ -174,17 +181,25 @@ class Sensor{
         }
 
         void executeAppendedMethod(char* methodName) {
-            this->_appendedMethods.at(methodName)();
+            if (this->_appendedMethods.contains(methodName)) {
+                this->_appendedMethods.at(methodName)();
+            } else {
+                this->_status = SensorUtils::SENSOR_ERR_NOT_FOUND;
+            }
         }
 
         uint8_t getAppendedVariable(char* variableName) {
-            return this->_appendedVariables.at(variableName);
+            if (this->_appendedVariables.contains(variableName)){
+                return this->_appendedVariables.at(variableName);
+            } else {
+                this->_status = SensorUtils::SENSOR_ERR_NOT_FOUND;
+            }
         }
 
         void appendSetupFunc(SensorUtils::FunctionCallback function) {
             if (this->_setupFuncs.size() >= SENSOR_MAX_ON_SETUP) {
                 // Too many sensor in the setup
-                this->_status = SensorUtils::SENSOR_ERR_ARG;
+                this->_status = SensorUtils::SENSOR_ERR_FULL;
             } else {
                 this->_setupFuncs.push_back(function);
             }
@@ -192,7 +207,7 @@ class Sensor{
         void appendLoopFunc(SensorUtils::FunctionCallback function) {
             if (this->_loopFuncs.size() > SENSOR_MAX_ON_LOOP) {
                 // Too many sensors in the loop
-                this->_status = SensorUtils::SENSOR_ERR_ARG;
+                this->_status = SensorUtils::SENSOR_ERR_FULL;
             } else {
                 this->_loopFuncs.push_back(function);
             }
