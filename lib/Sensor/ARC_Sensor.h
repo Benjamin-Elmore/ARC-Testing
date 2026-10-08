@@ -58,6 +58,8 @@ enum SensorPreconfig {
 template <size_t N>
 class Sensor{
     public:
+        using FunctionCallback = SensorUtils::FunctionCallback<N>;
+
         // CONSTRUCTOR:
         // Establish the fields for the sensor to be accessed later
         // If the Sensor is utilized through the mux, then provide the channel that
@@ -69,11 +71,11 @@ class Sensor{
                 SensorPreconfig sensorType = SensorPreconfig::NONE,                             // SENSOR PRECONFIG
                 uint8_t muxChannel = SensorUtils::UNUSED_MUX,                                   // MUX CHANNEL
                 uint8_t priority = DEFAULT_PRIORITY,                                            // SENSOR TASK PRIORITY
-                std::initializer_list <SensorUtils::FunctionCallback> appendedOnSetup = {},     // STARTUP FUNCTIONS
-                std::initializer_list<SensorUtils::FunctionCallback> appendedOnLoop = {},       // LOOP FUNCTIONS
-                std::initializer_list<SensorUtils::AppendedMethod> appendedMethods = {},        // APPENDED METHODS
+                std::initializer_list <FunctionCallback> appendedOnSetup = {},                  // STARTUP FUNCTIONS
+                std::initializer_list<FunctionCallback> appendedOnLoop = {},                    // LOOP FUNCTIONS
+                std::initializer_list<SensorUtils::AppendedMethod<N>> appendedMethods = {},     // APPENDED METHODS
                 std::initializer_list<SensorUtils::AppendedVariable> appendedVariables = {},    // APPENDED VARIABLES
-                SensorUtils::FunctionCallback SensorReadFunction = NULL                         // READ FUNCTION
+                FunctionCallback sensorReadFunction = NULL                                      // READ FUNCTION
             )
             : _name(name), _devAddrI2C(deviceAddrI2C), _sensorCommBusI2C(sensorCommBus), _muxChannel(muxChannel), _priority(priority)
         {
@@ -90,7 +92,7 @@ class Sensor{
                     // Too many sensors in the setup
                     this->_status = SensorUtils::SENSOR_ERR_ARG;
                 } else {
-                    for (const SensorUtils::FunctionCallback func : appendedOnSetup) {
+                    for (const FunctionCallback func : appendedOnSetup) {
                         this->_setupFuncs.push_back(func);
                     }
                 }
@@ -102,29 +104,52 @@ class Sensor{
                     // Too many sensors in the loop
                     this->_status = SensorUtils::SENSOR_ERR_ARG;
                 } else {
-                    for (const SensorUtils::FunctionCallback func : appendedOnLoop) {
+                    for (const FunctionCallback func : appendedOnLoop) {
                         this->_loopFuncs.push_back(func);
                     }
                 }
             }
             
             // APPENDED METHODS SETUP
-            for (const SensorUtils::AppendedMethod& method : appendedMethods) {
-                this->appendMethod(method.methodName, method.method);
+            for (const SensorUtils::AppendedMethod<N>& method : appendedMethods) {
+                this->appendMethod(method.methodName, method.methodName);
             }
             for (const SensorUtils::AppendedVariable& variable : appendedVariables) {
                 this->appendVariable(variable.variableName, variable.variable);
+            }
+
+            if (sensorReadFunction != NULL) {
+                this->_readFunction = sensorReadFunction;
+            } else{
+                this->_status = SensorUtils::SENSOR_ERR_NO_READER;
             }
         }
 
         // DESTRUCTOR:
         // Default for the sensor
-        ~Sensor() = default;
-        
+        ~Sensor() {
+            // If needed, end the RTOS task when the sensor is destroyed
+            // Set the taskHandle_t to not point to anything
+            if (this->_taskObject != NULL) {
+                vTaskDelete(this->_taskObject);
+                this->_taskObject = NULL;
+            }
+        }
+
+        // NON COPY-ABILITY for the sensor class
+        // This prevents misues of copied instances
+        Sensor(const Sensor&) = delete;
+        Sensor& operator=(const Sensor&) = delete;
+
         void setup() {
             // Setup the sensor, and start the RTOS task
             // When a child class inherits this class, the super
             // of setup() must be called.
+
+            if(this->_setupRan) {
+                this->_status = SensorUtils::SENSOR_ERR_FUNC_CALL;
+                return;
+            }
 
             // Add the sensor to the I2C bus with its address identifier
             this->_sensorCommBusI2C.addSensorClassToBus(
@@ -140,7 +165,8 @@ class Sensor{
             }
 
             // Create the RTOS Task and store it in taskObject
-            xTaskCreatePinnedToCore(
+            BaseType_t status = xTaskCreatePinnedToCore
+            (
                 _taskEntry,             //Task Loop
                 this->_name,            //Loop Name
                 TASK_STACK_SIZE,        //Stack size
@@ -150,10 +176,15 @@ class Sensor{
                 this->_core             //Core
             );
 
-
+            if (status != pdFALSE) {
+                this->_status = SensorUtils::SENSOR_OK;
+                this->_setupRan = true;
+            } else {
+                this->_status = SensorUtils::SENSOR_ERR_FAULT;
+            }
         }
 
-        void appendMethod(char* functionName, SensorUtils::FunctionCallback function) {
+        void appendMethod(char* functionName, FunctionCallback function) {
             // Append a method to the hash table
 
             if (this->_appendedMethods.size() >= SENSOR_MAX_METHODS) {
@@ -174,29 +205,49 @@ class Sensor{
         }
 
         void executeAppendedMethod(char* methodName) {
-            this->_appendedMethods.at(methodName)();
+            if (this->_appendedMethods.contains(methodName)) {
+                this->_appendedMethods.at(methodName)(*this);
+            } else {
+                this->_status = SensorUtils::SENSOR_ERR_NOT_FOUND;
+            }
         }
 
         uint8_t getAppendedVariable(char* variableName) {
-            return this->_appendedVariables.at(variableName);
+            if (this->_appendedVariables.contains(variableName)){
+                return this->_appendedVariables.at(variableName);
+            } else {
+                this->_status = SensorUtils::SENSOR_ERR_NOT_FOUND;
+                // Return a sentinel value
+                return SensorUtils::FAULTY_VARIABLE;
+            }
         }
 
-        void appendSetupFunc(SensorUtils::FunctionCallback function) {
+        void setAppendedVariable(std::string_view variableName, uint8_t data) {
+            if (this->_appendedVariables.contains(variableName)) {
+                this->_appendedVariables.at(variableName) = data;
+            } else {
+                this->_status = SensorUtils::SENSOR_ERR_ARG;
+            }
+        }
+
+        void appendSetupFunc(FunctionCallback function) {
             if (this->_setupFuncs.size() >= SENSOR_MAX_ON_SETUP) {
                 // Too many sensor in the setup
-                this->_status = SensorUtils::SENSOR_ERR_ARG;
+                this->_status = SensorUtils::SENSOR_ERR_FULL;
             } else {
                 this->_setupFuncs.push_back(function);
             }
         }
-        void appendLoopFunc(SensorUtils::FunctionCallback function) {
+        void appendLoopFunc(FunctionCallback function) {
             if (this->_loopFuncs.size() > SENSOR_MAX_ON_LOOP) {
                 // Too many sensors in the loop
-                this->_status = SensorUtils::SENSOR_ERR_ARG;
+                this->_status = SensorUtils::SENSOR_ERR_FULL;
             } else {
                 this->_loopFuncs.push_back(function);
             }
         }
+
+        // GETTERS
 
         uint8_t getAddressI2C() { return this->_devAddrI2C; }
 
@@ -204,34 +255,44 @@ class Sensor{
 
         uint8_t getMuxI2C() { return this->_muxChannel; }
 
+        // WRAPPERS FOR I2CBus
+        esp_err_t readDeviceRegister(const uint8_t regAddr, uint8_t *data, const size_t length) {
+            return this->_sensorCommBusI2C.readRegister(this->_name, *data, length);
+        }
+        
+        esp_err_t writeDeviceRegister(uint8_t regAddr, uint8_t data) {
+            return this->_sensorCommBusI2C.writeRegister(this->_name, data, length);
+        }
+
     protected:
         // Meant to be interfaced with in child classes
 
         // TASK OBJECT
-        TaskHandle_t _taskObject;
+        TaskHandle_t _taskObject = nullptr;
 
         // Constructor-defined variables
         char* _name;
 
-        SensorUtils::FunctionCallback readFunction = NULL;
+        FunctionCallback _readFunction = NULL;
 
         //OPTIONAL MEMBERS:
         uint8_t _devAddrI2C = SensorUtils::ADDR_NOT_INCLUDED;
 
         // SETUP AND LOOP FUNCTIONS, stored in linked list
         // Pointers to the head of each function list:
-        std::list<SensorUtils::FunctionCallback> _setupFuncs{};
-        std::list<SensorUtils::FunctionCallback> _loopFuncs{};
+        std::list<FunctionCallback> _setupFuncs{};
+        std::list<FunctionCallback> _loopFuncs{};
 
         //APPENDED METHODS AND VARIABLES, stored in hash tables
-        std::unordered_map<std::string_view, SensorUtils::FunctionCallback> _appendedMethods = {};
-        std::unordered_map<std::string_view, uint8_t> _appendedVariables = {};
+        std::unordered_map<std::string_view, FunctionCallback> _appendedMethods = {};
+        std::unordered_map<std::string_view, uint16_t> _appendedVariables = {};
 
-        void executeFunctionList(std::list<SensorUtils::FunctionCallback>& funcList) {
+        void executeFunctionList(std::list<FunctionCallback>& funcList) {
             // Execute all of the functions in the linked list
 
-            for (const SensorUtils::FunctionCallback func : funcList){
-                func();
+            for (const FunctionCallback func : funcList){
+                // Run each function with a reference to the Sensor
+                func(*this);
             }
         }
 
@@ -239,6 +300,14 @@ class Sensor{
         void taskLoop() {
             // Loop on RTOS TASK
             for (;;) {
+                if (this->_readFunction == NULL) {
+                    // The reader function does not exist, the delay needs to go in place
+                    // This task is useless without the critical read function
+
+                    vTaskDelay(pdMS_TO_TICKS(500));
+                    this->_status = SensorUtils::SENSOR_ERR_NO_READER;
+                }
+
                 {
                     // Lock the bus mutex with a Lockguard, if it is not currently available
                     // we will run a delay on the mutex
@@ -248,9 +317,10 @@ class Sensor{
                         // currently available
                         vTaskDelay(pdMS_TO_TICKS(LOCK_FAIL_DELAY));
 
-                    } else if (this->readFunction != NULL) {
+                    } else if (this->_readFunction != NULL) {
                         // Run the preconfigured read function
-                        this->readFunction();
+                        // The if statement is for safety
+                        this->_readFunction(*this);
                     }
                 }
 
@@ -272,6 +342,7 @@ class Sensor{
         uint8_t _priority{DEFAULT_PRIORITY};
 
         bool _exceededMaximums{false};
+        bool _setupRan{false};
         SensorUtils::sensor_status_t _status {SensorUtils::SENSOR_ERR_NOT_READY};
 
         // WRAPPER ON TASK LOOP for RTOS Task

@@ -13,24 +13,31 @@
 #define OTOS_REG_ACC            0x2C  // 6 bytes (Acc_X, Acc_Y, Acc_H)
 
 namespace OpticalPreconfig {
-    
-    template <typename S, size_t M>
-    inline esp_err_t getOpticalPosition(Vec3<S> &packet, I2CBus<M> &commBus) {
+
+    template <size_t M>
+    inline esp_err_t getOpticalPosition(Sensor<M> sensor) {
         // Get the positioning from the optical sensor
         // Packet data is stored in vec3,
         // ESP status is returned
 
         uint8_t opticalData[6]{};
 
-        esp_err_t status = commBus.readRegister(OTOS_REG_POS, opticalData, sizeof(opticalData) / sizeof(opticalData[0]));
+        esp_err_t status = sensor.readDeviceRegister(
+            OTOS_REG_POS,
+            opticalData,
+            sizeof(opticalData) / sizeof(opticalData[0])
+        );
 
-        if(status != ESP_OK){
+        // esp_err_t status = readRegister(OTOS_REG_POS, opticalData, sizeof(opticalData) / sizeof(opticalData[0]));
+
+        if (status != ESP_OK){
             return status;
         }
 
-        packet.x = static_cast<S>(i2cUtils::convertTo16Bits(&opticalData[0]));     // X Positioning
-        packet.y = static_cast<S>(i2cUtils::convertTo16Bits(&opticalData[2]));     // Y Positioning
-        packet.z = static_cast<S>(i2cUtils::convertTo16Bits(&opticalData[4]));     // Heading
+        
+        sensor.setAppendedVariable("x") = static_cast<uint16_t>(i2cUtils::convertTo16Bits(&opticalData[0]));     // X Positioning
+        sensor.setAppendedVariable("y") = static_cast<uint16_t>(i2cUtils::convertTo16Bits(&opticalData[2]));     // Y Positioning
+        sensor.setAppendedVariable("h") = static_cast<uint16_t>(i2cUtils::convertTo16Bits(&opticalData[4]));     // Heading
 
         return ESP_OK;
     }
