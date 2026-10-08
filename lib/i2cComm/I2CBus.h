@@ -67,7 +67,6 @@ public:
 
         // Create the master bus, controlled with the busHandle object
         this->confirmStatus(i2c_new_master_bus(&i2cMasterConfig, &this->_busHandle));
-
         
         // Include the muxes with the bus if needed, for loop will not run
         // if _muxAddresses is an empty list, as size = 0

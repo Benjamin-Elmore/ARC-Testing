@@ -2,13 +2,18 @@
 #include <functional>
 #include <unordered_map>
 
+// Forward declaration for Sensor<N>
+template <size_t N>
+class Sensor;
+
 namespace SensorUtils {
     constexpr uint8_t UNUSED_MUX = 0xFF;
     constexpr uint8_t ADDR_NOT_INCLUDED = 0xFF;
     constexpr uint8_t FAULTY_VARIABLE = 0xFF;
 
     //STRUCTURE OF A FUNCTION CALLBACK
-    using FunctionCallback = void(*)();
+    template <size_t N>
+    using FunctionCallback = void(*)(Sensor<N>&);
     using EspErrorCallback = esp_err_t(*)();
 
     typedef enum {
@@ -46,17 +51,18 @@ namespace SensorUtils {
     return "?";  // Defensive fallback for an invalid/out-of-range enum value.
 }
 
+    template <size_t N>
     struct AppendedMethod {
         char* methodName;
-        FunctionCallback method;
+        FunctionCallback<N> method;
 
-        AppendedMethod(char* name, FunctionCallback method) : methodName(name), method(method){};
+        AppendedMethod(char* name, FunctionCallback<N> method) : methodName(name), method(methodName){};
     };
 
     struct AppendedVariable {
         char* variableName;
-        uint8_t variable;
+        uint16_t variable;
 
-        AppendedVariable(char* name, uint8_t variable) : variableName(name), variable(variable){};
+        AppendedVariable(char* name, uint16_t variable) : variableName(name), variable(variable){};
     };
 }
