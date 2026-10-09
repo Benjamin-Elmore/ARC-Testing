@@ -53,16 +53,16 @@ namespace SensorUtils {
 
     template <size_t N>
     struct AppendedMethod {
-        char* methodName;
+        std::string_view methodName;
         FunctionCallback<N> method;
 
-        AppendedMethod(char* name, FunctionCallback<N> method) : methodName(name), method(methodName){};
+        AppendedMethod(std::string_view name, FunctionCallback<N> method) : methodName(name), method(method){};
     };
 
     struct AppendedVariable {
-        char* variableName;
+        std::string_view variableName;
         uint16_t variable;
 
-        AppendedVariable(char* name, uint16_t variable) : variableName(name), variable(variable){};
+        AppendedVariable(std::string_view name, uint16_t variable) : variableName(name), variable(variable){};
     };
 }

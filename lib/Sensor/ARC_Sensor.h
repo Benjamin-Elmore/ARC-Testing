@@ -112,7 +112,7 @@ class Sensor{
             
             // APPENDED METHODS SETUP
             for (const SensorUtils::AppendedMethod<N>& method : appendedMethods) {
-                this->appendMethod(method.methodName, method.methodName);
+                this->appendMethod(method.methodName, method.method);
             }
             for (const SensorUtils::AppendedVariable& variable : appendedVariables) {
                 this->appendVariable(variable.variableName, variable.variable);
@@ -184,7 +184,7 @@ class Sensor{
             }
         }
 
-        void appendMethod(char* functionName, FunctionCallback function) {
+        void appendMethod(std::string_view functionName, FunctionCallback function) {
             // Append a method to the hash table
 
             if (this->_appendedMethods.size() >= SENSOR_MAX_METHODS) {
@@ -194,7 +194,7 @@ class Sensor{
             this->_appendedMethods.emplace(functionName, function);
         }
 
-        void appendVariable(char* variableName, uint8_t variable) {
+        void appendVariable(std::string_view variableName, uint8_t variable) {
             // Append a variable to the hash table
 
             if (this->_appendedVariables.size() >= SENSOR_USER_SLOTS) {
@@ -257,11 +257,11 @@ class Sensor{
 
         // WRAPPERS FOR I2CBus
         esp_err_t readDeviceRegister(const uint8_t regAddr, uint8_t *data, const size_t length) {
-            return this->_sensorCommBusI2C.readRegister(this->_name, *data, length);
+            return this->_sensorCommBusI2C.readRegister(this->_name, regAddr, data, length);
         }
         
         esp_err_t writeDeviceRegister(uint8_t regAddr, uint8_t data) {
-            return this->_sensorCommBusI2C.writeRegister(this->_name, data, length);
+            return this->_sensorCommBusI2C.writeRegister(this->_name, regAddr, data);
         }
 
     protected:
