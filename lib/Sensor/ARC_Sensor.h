@@ -17,6 +17,7 @@
 #include "Vec3.h"
 #include "OpticalPreconfig.h"
 #include "I2CBus.h"
+#include "RS485Comm.h"
 
 // MAXIMUM VALUES PER SENSOR
 #ifndef SENSOR_MAX_FILTERS
@@ -38,7 +39,7 @@
 #define TASK_STACK_SIZE 2048
 #endif
 #ifndef DEFAULT_PRIORITY
-#define DEFAULT_PRIORITY 1
+#define DEFAULT_PRIORITY 2
 #endif
 #ifndef LOCK_FAIL_DELAY
 #define LOCK_FAIL_DELAY 50
